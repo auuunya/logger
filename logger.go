@@ -24,6 +24,7 @@ type logger struct {
 	file      *os.File
 	loggerf   *log.Logger
 	writeFile bool
+	path      string
 }
 
 // logging 接口
@@ -65,70 +66,31 @@ func NewLogger() *logger {
 	return loger
 }
 
-//当前文件
-func getwd() (string, error) {
-	path, err := os.Getwd()
-	if err != nil {
-		return "", errors.New(fmt.Sprintln("Getwd Error:", err))
-	}
-	filepathstr := filepath.Join(path, "logs")
-	err = os.MkdirAll(filepathstr, 0755)
-	if err != nil {
-		return "", errors.New(fmt.Sprintln("Create Dirs Error:", err))
-	}
-	return filepathstr, nil
-}
-
 //创建日志文件
 //制定创建路径和日志名
-func Init(path, logname string, level string) (*logger, error) {
-	var logging *os.File
-	var err error
-	if path == "" {
-		filePath, _ := getwd()
-		filepathstr := filepath.Join(filePath, logname)
-		logging, err = os.Create(filepathstr)
-		if err != nil {
-			return nil, errors.New(fmt.Sprintln("Create File Error:", err))
-		}
-	} else if logname == "" {
-		filepathstr := path
-		err := os.MkdirAll(filepathstr, 0644)
-		if err != nil {
-			return nil, errors.New(fmt.Sprintln("Create Dirs Error:", err))
-		}
-		logname = filepath.Join(filepathstr, "logs.log")
-		logging, err = os.Create(logname)
-		if err != nil {
-			return nil, errors.New(fmt.Sprintln("Create File Error:", err))
-		}
-	} else {
-		filepathstr := path
-		err := os.MkdirAll(filepathstr, 0644)
-		if err != nil {
-			return nil, errors.New(fmt.Sprintln("Create Dirs Error:", err))
-		}
-		logname = filepath.Join(filepathstr, logname)
-		logging, err = os.Create(logname)
-		if err != nil {
-			return nil, errors.New(fmt.Sprintln("Create File Error:", err))
-		}
-	}
-	llog := new(logger)
-	llog.file = logging
-	llog.SetLevel(level)
-	//log.Llongfile|log.Ltime|log.Ldata 返回文件信息，时间和代码信息不需要重新写函数获取
-	//初始化一个*log.Logger
-	llog.loggerf = log.New(logging, "Logger_File_", log.Llongfile|log.Ltime|log.Ldate)
-	return llog, nil
+func (llog *logger) SetLogPath(path string) {
+	llog.path = path
 }
 
-//
+func (llog *logger) SetLogFile(filename string) error {
+	err := os.MkdirAll(llog.path, 0644)
+	if err != nil {
+		return errors.New(fmt.Sprintln("Create Dirs Error:", err))
+	}
+	logname := filepath.Join(llog.path, filename)
+	llog.file, err = os.Create(logname)
+	if err != nil {
+		return errors.New(fmt.Sprintln("Create File Error:", err))
+	}
+	return nil
+}
+
+// 设置输出方式
 func (llog *logger) SetPut(boolean bool) {
 	llog.writeFile = boolean
 }
 
-//set output
+// 判断输出方式
 func (llog *logger) SetWrite() {
 	if llog.writeFile == true {
 		llog.loggerf.SetOutput(llog.file)
