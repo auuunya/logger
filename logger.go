@@ -10,79 +10,106 @@ import (
 	"time"
 )
 
-var llog Logger
-
-func init() {
-	// 日志设置
-	llog := NewLogger()
-	llog.SetLevel("error")
-	llog.SetLogPath(fmt.Sprintf("logs/log_%s.log", time.Now().Format("20060102")))
-}
-
-//定义日志级别
-const (
-	LevelError   = iota // 0
-	LevelWarning        // 1
-	LevelInfo           // 2
-	LevelDebug          // 3
-)
-
-//定义日志结构体
-type Logger struct {
-	level     int
-	file      *os.File
-	loggerf   *log.Logger
-	writeFile bool
-	path      string
-}
+var logging *Logger
 
 // Errorf 默认日志对象方法，记录一条错误日志，需要先初始化
 func Errorf(format string, v ...interface{}) {
-	llog.Errorf(format, v...)
+	logging.Errorf(format, v...)
 }
 
 // Error 默认日志对象方法，记录一条消息日志，需要先初始化
 func Error(args ...interface{}) {
-	llog.Error(args...)
+	logging.Error(args...)
 }
 
 // Infof 默认日志对象方法，记录一条消息日志，需要先初始化
 func Infof(format string, v ...interface{}) {
-	llog.Infof(format, v...)
+	logging.Infof(format, v...)
 }
 
 // Info 默认日志对象方法，记录一条消息日志，需要先初始化
 func Info(args ...interface{}) {
-	fmt.Println("args：", args)
-	llog.Info(args...)
+	logging.Info(args...)
 }
 
 // Debugf 默认日志对象方法，记录一条消息日志，需要先初始化
 func Debugf(format string, v ...interface{}) {
-	llog.Debugf(format, v...)
+	logging.Debugf(format, v...)
 }
 
 // Debug 默认日志对象方法，记录一条调试日志，需要先初始化
 func Debug(args ...interface{}) {
-	llog.Debug(args...)
+	logging.Debug(args...)
 }
 
 //Waring
-func Waring(format string, v ...interface{}) {
-	llog.Warningf(format, v...)
+func Warningf(format string, v ...interface{}) {
+	logging.Warningf(format, v...)
 }
 
 // Waringf
-func Waringf(args ...interface{}) {
-	llog.Warning(args...)
+func Warning(args ...interface{}) {
+	logging.Warning(args...)
 }
 
-// logging 接口
-type logging interface {
-	Init(path, logname string, level int) error
-	fileWrite(time time.Time, msg interface{}) error
-	SetLevel(level string)
-	GetLevel() int
+type Level int16
+
+// 定义日志级别
+const (
+	DebugLevel Level = iota
+	InfoLevel
+	WarningLevel
+	ErrorLevel
+	FatalLevel
+)
+
+//定义日志结构体
+type Logger struct {
+	level     Level
+	file      *os.File
+	loggerf   *log.Logger
+	writeFile bool
+	path      string
+	logname   string
+	today     string
+	switchLog bool
+	closed    bool
+}
+
+// 获取日志级别
+func getLevel(level Level) string {
+	switch level {
+	case DebugLevel:
+		return "DEBUG"
+	case InfoLevel:
+		return "INFO"
+	case WarningLevel:
+		return "WARNING"
+	case ErrorLevel:
+		return "ERROR"
+	case FatalLevel:
+		return "FATAL"
+	default:
+		return "DEBUG"
+	}
+}
+
+//等级设置
+func SetLevel(level string) Level {
+	switch strings.ToLower(level) {
+	case "DEBUG":
+		return DebugLevel
+	case "INFO":
+		return InfoLevel
+	case "warning":
+		return WarningLevel
+	case "error":
+		return ErrorLevel
+	case "fatal":
+		return FatalLevel
+	default:
+		return DebugLevel
+	}
 }
 
 /**
@@ -105,62 +132,102 @@ func IsFile(path string) (os.FileInfo, bool) {
 	return f, flag && !f.IsDir()
 }
 
-// 获取等级
-func (llog *Logger) GetLevel() int {
-	return llog.level
-}
-
-//等级设置
-func (llog *Logger) SetLevel(level string) {
-	switch strings.ToLower(level) {
-	case "debug":
-		llog.level = LevelDebug
-	case "info":
-		llog.level = LevelInfo
-	case "warning":
-		llog.level = LevelWarning
-	case "error":
-		llog.level = LevelError
-	}
-}
-
 //时间转字符串
 func formatTime(t *time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-func NewLogger() *Logger {
-	loger := &Logger{
-		writeFile: false,
+// 打开日志文件
+func NewLogger(level, filepath, logname string, outfile, switchLog bool) {
+	logging = &Logger{
+		level:     SetLevel(level),
+		path:      filepath,
+		logname:   logname,
+		writeFile: outfile,
+		switchLog: switchLog,
+		today:     time.Now().Format("2006-01-02"),
 	}
-	loger.SetLevel("debug")
-	loger.loggerf = log.New(os.Stdout, "Logger_Stdout_", log.Llongfile|log.Ltime|log.Ldate)
-	return loger
+	logging.Init()
+}
+
+// 关闭日志文件
+func (logging *Logger) CloseLogger() {
+	logging.file.Close()
+}
+
+func (llog *Logger) Init() {
+	llog.loggerf = log.New(os.Stdout, "Logger_Out_", log.Llongfile|log.Ltime|log.Ldate)
+	if llog.writeFile {
+		if llog.path != "" {
+			if err := llog.SetLogFile(); err == nil {
+				llog.SetWrite()
+				logging.closed = false
+			}
+		}
+	}
+	if llog.switchLog {
+		go logging.logWorker()
+	}
+}
+
+// 控制文件切换,协程函数
+func (llog *Logger) logWorker() {
+	for llog.closed == false {
+		nowDate := time.Now().Format("2006-01-02")
+		if nowDate != llog.today {
+			llog.rotate()
+		}
+	}
+}
+
+// 文件切换函数
+func (llog *Logger) rotate() {
+	fmt.Println("rotate run")
+	defer func() {
+		rec := recover()
+		if rec != nil {
+			llog.loggerf.Printf("recover error: %v", rec)
+		}
+	}()
+	logname := filepath.Join(llog.path, llog.logname)
+	_, err := os.Stat(logname)
+	if err == nil {
+		llog.CloseLogger()
+		err = os.Rename(logname, logname+"."+time.Now().Add(-1*time.Hour*24).Format("2006-01-02"))
+		if err != nil {
+			llog.loggerf.Printf("rename log error: %v", err)
+		}
+	}
+	if llog.logname != "" {
+		nextfile, err := os.OpenFile(filepath.Join(llog.path, llog.logname),
+			os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			llog.loggerf.Printf("open file error: %v", err)
+		}
+		llog.file = nextfile
+		llog.SetWrite()
+	}
+	llog.today = time.Now().Format("2006-01-02")
 }
 
 //创建日志文件
-//制定创建路径和日志名
 func (llog *Logger) SetLogPath(path string) {
 	llog.path = path
-	llog.SetLogFile()
-	llog.SetPut(true)
 }
 
 // 创建日志文件
 func (llog *Logger) SetLogFile() error {
 	pathList := strings.Split(llog.path, "/")
-	pathLen := len(pathList)
-	filePrefix := pathList[pathLen-1]
-	_, filebool := IsFile(llog.path)
+	_, filebool := IsFile(filepath.Join(llog.path, llog.logname))
 	filePathTemp := ""
 	if filebool {
-		logname, err := os.OpenFile(llog.path, os.O_APPEND, 0666)
+		loggerfile, err := os.OpenFile(llog.path, os.O_APPEND, 0666)
 		if err != nil {
 			return errors.New(fmt.Sprintln("Open File Error:", err))
 		}
-		llog.file = logname
+		llog.file = loggerfile
 	} else {
-		for _, v := range pathList[:pathLen-1] {
+		for _, v := range pathList {
 			filePathTemp += v
 			_, isExistsPath := IsExists(filePathTemp)
 			if !isExistsPath {
@@ -168,8 +235,8 @@ func (llog *Logger) SetLogFile() error {
 			}
 			filePathTemp += "/"
 		}
-		logname := filepath.Join(filePathTemp, filePrefix)
-		logfile, err := os.Create(logname)
+		loggerfile := filepath.Join(filePathTemp, llog.logname)
+		logfile, err := os.Create(loggerfile)
 		if err != nil {
 			return errors.New(fmt.Sprintln("Create File Error:", err))
 		}
@@ -181,7 +248,6 @@ func (llog *Logger) SetLogFile() error {
 // 设置输出方式
 func (llog *Logger) SetPut(boolean bool) {
 	llog.writeFile = boolean
-	llog.SetWrite()
 }
 
 // 判断输出方式
@@ -195,7 +261,7 @@ func (llog *Logger) SetWrite() {
 
 //按照格式打印日志
 func (llog *Logger) Debugf(format string, v ...interface{}) {
-	if llog.level > LevelDebug {
+	if llog.level > DebugLevel {
 		//log里的函数都自带有mutex
 		//这里获取一次锁
 		return
@@ -205,7 +271,7 @@ func (llog *Logger) Debugf(format string, v ...interface{}) {
 
 //Infof
 func (llog *Logger) Infof(format string, v ...interface{}) {
-	if llog.level > LevelInfo {
+	if llog.level > InfoLevel {
 		return
 	}
 	llog.loggerf.Printf("[INFO] "+format, v...)
@@ -213,7 +279,7 @@ func (llog *Logger) Infof(format string, v ...interface{}) {
 
 //Warningf
 func (llog *Logger) Warningf(format string, v ...interface{}) {
-	if llog.level > LevelWarning {
+	if llog.level > WarningLevel {
 		return
 	}
 	llog.loggerf.Printf("[WARNING] "+format, v...)
@@ -221,17 +287,24 @@ func (llog *Logger) Warningf(format string, v ...interface{}) {
 
 //Errorf
 func (llog *Logger) Errorf(format string, v ...interface{}) {
-	if llog.level > LevelError {
+	if llog.level > ErrorLevel {
 		return
 	}
 	llog.loggerf.Printf("[ERROR] "+format, v...)
+}
+
+func (llog *Logger) Fatalf(format string, v ...interface{}) {
+	if llog.level > FatalLevel {
+		return
+	}
+	llog.loggerf.Fatalf("[FATAL] "+format, v...)
 }
 
 //标准输出
 //Println存在输出会换行
 //这里采用Print输出方式
 func (llog *Logger) Debug(v ...interface{}) {
-	if llog.level > LevelDebug {
+	if llog.level > DebugLevel {
 		return
 	}
 	llog.loggerf.Print("[DEBUG] " + fmt.Sprintln(v...))
@@ -239,8 +312,7 @@ func (llog *Logger) Debug(v ...interface{}) {
 
 //Info
 func (llog *Logger) Info(v ...interface{}) {
-	fmt.Println("111111", llog.level > LevelInfo)
-	if llog.level > LevelInfo {
+	if llog.level > InfoLevel {
 		return
 	}
 
@@ -249,7 +321,7 @@ func (llog *Logger) Info(v ...interface{}) {
 
 //Warning
 func (llog *Logger) Warning(v ...interface{}) {
-	if llog.level > LevelWarning {
+	if llog.level > WarningLevel {
 		return
 	}
 	llog.loggerf.Print("[WARNING] " + fmt.Sprintln(v...))
@@ -257,8 +329,15 @@ func (llog *Logger) Warning(v ...interface{}) {
 
 //Error
 func (llog *Logger) Error(v ...interface{}) {
-	if llog.level > LevelError {
+	if llog.level > ErrorLevel {
 		return
 	}
 	llog.loggerf.Print("[ERROR] " + fmt.Sprintln(v...))
+}
+
+func (llog *Logger) Fatal(v ...interface{}) {
+	if llog.level > FatalLevel {
+		return
+	}
+	llog.loggerf.Fatal("[FATAL] " + fmt.Sprintln(v...))
 }

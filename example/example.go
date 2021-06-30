@@ -1,28 +1,15 @@
-package main
+package example
 
-import (
-	"fmt"
-	"logger"
-)
+import "logger"
 
-func main() {
-	// loger, err := logger.Init("./log_test", "test.log", 3)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// loger := logger.NewLogger()
-	loger, _ := logger.Init("./log_test", "logs.log", "error")
-	loger.SetPut(false)
-	loger.SetWrite()
-	loger.SetLevel("error")
-	fmt.Println("getlevel:", loger.GetLevel())
-	loger.Debugf("the Debugf test %s", "DEBUGF")
-	loger.Infof("the Infof test %s", "INFOF")
-	loger.Warningf("test Warningf test %s", "WARNINGF")
-	loger.Errorf("test Errorf test %s", "ERRORF")
+func Handle() {
+	logger.Debugf("the Debugf test %s", "DEBUGF")
+	logger.Infof("the Infof test %s", "INFOF")
+	logger.Warningf("test Warningf test %s", "WARNINGF")
+	logger.Errorf("test Errorf test %s", "ERRORF")
 
-	loger.Debug("the Debug test" + "DEBUG")
-	loger.Info("the Info test" + "INFO")
-	loger.Warning("test Warning test" + "WARNING")
-	loger.Error("test Error test" + "ERROR")
+	logger.Debug("the Debug test" + "DEBUG")
+	logger.Info("the Info test" + "INFO")
+	logger.Warning("test Warning test" + "WARNING")
+	logger.Error("test Error test" + "ERROR")
 }
